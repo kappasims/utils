@@ -463,6 +463,7 @@ $grid.Add_CellClick({
 
         $script:defragPhase = "starting"
         $script:defragFiles = 0
+        $script:gameName    = $gameName
 
         $script = {
             param($realPath, $tempRoot, $gameName)
@@ -519,13 +520,13 @@ $grid.Add_CellClick({
             param($line)
             if ($line -match '^PHASE:(.+)$') {
                 $script:defragPhase = $matches[1]
-                Set-Status ("Defrag {0}: {1} ({2} files)" -f $gameName, $script:defragPhase, $script:defragFiles) -busy $true
+                Set-Status ("Defrag {0}: {1} ({2} files)" -f $script:gameName, $script:defragPhase, $script:defragFiles) -busy $true
             }
             elseif ($line -match '^\s+(\d+)\s+') {
                 # robocopy per-file line starts with whitespace + size
                 $script:defragFiles++
                 if (($script:defragFiles % 20) -eq 0) {
-                    Set-Status ("Defrag {0}: {1} ({2} files)" -f $gameName, $script:defragPhase, $script:defragFiles) -busy $true
+                    Set-Status ("Defrag {0}: {1} ({2} files)" -f $script:gameName, $script:defragPhase, $script:defragFiles) -busy $true
                 }
             }
         }
@@ -538,11 +539,11 @@ $grid.Add_CellClick({
                 param($result, $err)
                 if ($err) {
                     [System.Windows.Forms.MessageBox]::Show(
-                        "Defrag failed: $err`nCheck for '$gameName.old' folder - your data may still be there.",
+                        "Defrag failed: $err`nCheck for '$($script:gameName).old' folder - your data may still be there.",
                         "Error") | Out-Null
                 } else {
                     [System.Windows.Forms.MessageBox]::Show(
-                        "Defrag complete: $script:defragFiles files copied.",
+                        "Defrag complete: $($script:defragFiles) files copied.",
                         "Done") | Out-Null
                 }
                 Load-Games
@@ -568,6 +569,8 @@ $grid.Add_CellClick({
         # Counters for progress — updated via OnProgress on UI thread
         $script:progFiles = 0
         $script:progDir   = ""
+        $script:gameName  = $gameName
+        $script:algo      = $algo
 
         $script = {
             param($realPath, $algo, $markerName)
@@ -638,22 +641,22 @@ $grid.Add_CellClick({
             param($line)
             if ($line -match '^\s*Compressing files in\s+(.+?)\s*$') {
                 $script:progDir = $matches[1]
-                Set-Status ("Compressing {0} ({1} files done) - {2}" -f $gameName, $script:progFiles, $script:progDir) -busy $true
+                Set-Status ("Compressing {0} ({1} files done) - {2}" -f $script:gameName, $script:progFiles, $script:progDir) -busy $true
             }
             elseif ($line -match '^\s*Uncompressing files in\s+(.+?)\s*$') {
                 $script:progDir = $matches[1]
-                Set-Status ("Decompressing {0} ({1} files done) - {2}" -f $gameName, $script:progFiles, $script:progDir) -busy $true
+                Set-Status ("Decompressing {0} ({1} files done) - {2}" -f $script:gameName, $script:progFiles, $script:progDir) -busy $true
             }
             elseif ($line -match '\[OK\]\s*$') {
                 # Per-file success line — compact.exe tags both compressed and decompressed files with "[OK]"
                 $script:progFiles++
                 if (($script:progFiles % 25) -eq 0) {
-                    Set-Status ("Compressing {0} ({1} files) - {2}" -f $gameName, $script:progFiles, $script:progDir) -busy $true
+                    Set-Status ("Compressing {0} ({1} files) - {2}" -f $script:gameName, $script:progFiles, $script:progDir) -busy $true
                 }
             }
             elseif ($line -match 'files? within') {
                 # Summary line at the end: "123 files within 45 directories were compressed."
-                Set-Status ("{0}: {1}" -f $gameName, $line.Trim()) -busy $true
+                Set-Status ("{0}: {1}" -f $script:gameName, $line.Trim()) -busy $true
             }
         }
 
@@ -667,7 +670,7 @@ $grid.Add_CellClick({
                     [System.Windows.Forms.MessageBox]::Show("Compression failed: $err", "Error") | Out-Null
                 } else {
                     [System.Windows.Forms.MessageBox]::Show(
-                        "$gameName : $algo - $script:progFiles files processed.",
+                        "$($script:gameName) : $($script:algo) - $($script:progFiles) files processed.",
                         "Compress") | Out-Null
                 }
                 Load-Games
