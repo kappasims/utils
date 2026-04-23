@@ -1,4 +1,4 @@
-Add-Type -AssemblyName System.Windows.Forms
+﻿Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 # --- DEFAULT CONFIGURATION (user overrides saved to %APPDATA%\GameOrganizer\config.json) ---
@@ -8,12 +8,12 @@ $script:archivedPath   = "F:\Archived"
 $script:defragTempPath = "E:\TempDefrag"
 $markerFileName        = ".gameorganizer_compression"   # per-game marker so we can show state fast
 
-$script:configDir  = Join-Path $env:APPDATA "GameOrganizer"
+$script:configDir  = Join-Path $env:APPDATA "gameorganizer"
 $script:configFile = Join-Path $script:configDir "config.json"
 
 # If the user points at a Steam library root (contains steamapps\common) or at
 # the steamapps folder itself, descend to the common folder. Otherwise return
-# the input unchanged — an invalid/nonexistent path is the user's problem.
+# the input unchanged -- an invalid/nonexistent path is the user's problem.
 function Resolve-SteamPath {
     param([string]$path)
     if (-not $path) { return $path }
@@ -30,7 +30,7 @@ function Resolve-SteamPath {
     $c1 = Join-Path $path "steamapps\common"
     if (Test-Path $c1) { return $c1 }
 
-    # <lib>\steamapps selected — descend into its common folder
+    # <lib>\steamapps selected -- descend into its common folder
     $c2 = Join-Path $path "common"
     if ($leaf -ieq "steamapps" -and (Test-Path $c2)) { return $c2 }
 
@@ -80,7 +80,7 @@ function Show-SetupWizard {
     }
 
     $f = New-Object System.Windows.Forms.Form
-    $f.Text = "Game Organizer — Setup"
+    $f.Text = "Game Organizer -- Setup"
     $f.Size = New-Object System.Drawing.Size(660, 620)
     $f.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
@@ -169,7 +169,7 @@ function Show-SetupWizard {
 
     Add-WizardSection ([ref]$y) -key "Steam" -optional $true `
         -title "I use Steam" `
-        -help "Pick your Steam library root (the folder that contains steamapps\common) or the common folder itself — we'll descend automatically." `
+        -help "Pick your Steam library root (the folder that contains steamapps\common) or the common folder itself -- we'll descend automatically." `
         -initial $defaults.SteamPath `
         -dialogDesc "Steam library folder"
 
@@ -248,7 +248,7 @@ $configExisted = Test-Path $script:configFile
 Load-AppConfig
 if (-not $configExisted) {
     if (-not (Show-SetupWizard)) {
-        # User cancelled first-run setup — nothing to do
+        # User cancelled first-run setup -- nothing to do
         return
     }
 }
@@ -767,7 +767,7 @@ $btnRefresh.Size = New-Object System.Drawing.Size(100, 35)
 $btnRefresh.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
 $btnRefresh.Add_Click({ Load-Games })
 
-# Clear Saved Settings — wipes %APPDATA%\GameOrganizer and re-runs the wizard
+# Clear Saved Settings -- wipes %APPDATA%\GameOrganizer and re-runs the wizard
 $btnClearSettings = New-Object System.Windows.Forms.Button
 $btnClearSettings.Text = "Clear Saved Settings"
 $btnClearSettings.Size = New-Object System.Drawing.Size(160, 35)
@@ -976,7 +976,7 @@ $grid.Add_CellMouseClick({
             [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
         if ($resp -ne 'Yes') { return }
 
-        # Counters for progress — updated via OnProgress on UI thread
+        # Counters for progress -- updated via OnProgress on UI thread
         $script:progFiles = 0
         $script:progDir   = ""
         $script:gameName  = $gameName
@@ -1058,7 +1058,7 @@ $grid.Add_CellMouseClick({
                 Set-Status ("Decompressing {0} ({1} files done) - {2}" -f $script:gameName, $script:progFiles, $script:progDir) -busy $true
             }
             elseif ($line -match '\[OK\]\s*$') {
-                # Per-file success line — compact.exe tags both compressed and decompressed files with "[OK]"
+                # Per-file success line -- compact.exe tags both compressed and decompressed files with "[OK]"
                 $script:progFiles++
                 if (($script:progFiles % 25) -eq 0) {
                     Set-Status ("Compressing {0} ({1} files) - {2}" -f $script:gameName, $script:progFiles, $script:progDir) -busy $true
