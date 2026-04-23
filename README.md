@@ -8,6 +8,20 @@ Windows GUI for managing Steam and GOG installs on NTFS.
 
 Lives under [`GameOrganizer/`](GameOrganizer/).
 
+### What it does
+
+- Toggle games between active (in place) and archived (moved, junction-linked).
+- Detect orphan archives and broken junctions.
+- Apply NTFS compression (LZX, XPRESS 16K/8K/4K) or decompress via `compact.exe`. See [About the compression](#about-the-compression).
+- Defrag by copying a game to a scratch folder and back via robocopy.
+
+### Requirements
+
+- Windows 10 / 11 on NTFS
+- Windows PowerShell 5.1
+- Administrator for junction creation and LZX compression (right-click
+  the `.bat` -> Run as administrator)
+
 ### Prerequisites
 
 `gameorganizer.bat` resolves its script via `%~dp0`, so both files must
@@ -44,12 +58,7 @@ Settings** wipes that folder and reopens the wizard.
 Keep the archive folder on the same volume as your libraries, as toggle
 is a rename within a volume and a full copy across volumes.
 
-### What it does
-
-- Toggle games between active (in place) and archived (moved, junction-linked).
-- Detect orphan archives and broken junctions.
-- Apply NTFS compression (LZX, XPRESS 16K/8K/4K) or decompress via `compact.exe`.
-- Defrag by copying a game to a scratch folder and back via robocopy.
+<a id="about-the-compression"></a>
 
 ### About the compression
 
@@ -81,10 +90,3 @@ quota and silently discard older restore points. The Defrag action has
 the same effect for the same reason. If you rely on VSS, run compress
 or defrag outside your snapshot window, or increase `vssadmin resize
 shadowstorage` first.
-
-### Requirements
-
-- Windows 10 / 11 on NTFS
-- Windows PowerShell 5.1
-- Administrator for junction creation and LZX compression (right-click
-  the `.bat` -> Run as administrator)
