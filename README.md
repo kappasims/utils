@@ -2,26 +2,27 @@
 
 Personal collection of Windows utilities.
 
-## ZoneMover
+## GameOrganizer
 
 A Windows GUI for managing Steam and GOG game installs: archive games behind
 directory junctions, toggle them between active and archived, and apply NTFS
 compression (LZX / XPRESS) or run a copy-cycle defrag — all from a single
 DataGridView.
 
-Lives under [`ZoneMover/`](ZoneMover/).
+Lives under [`GameOrganizer/`](GameOrganizer/).
 
 ### Running
 
 1. Clone or copy the repo anywhere on a Windows machine.
-2. Keep `ZoneMover/ZoneMover.ps1` and `ZoneMover/zones.bat` **side-by-side** in
-   the same folder (the launcher resolves the script with `%~dp0`).
-3. Double-click `ZoneMover/zones.bat` to start the GUI.
+2. Keep `GameOrganizer/GameOrganizer.ps1` and `GameOrganizer/GameOrganizer.bat`
+   **side-by-side** in the same folder (the launcher resolves the script with
+   `%~dp0`).
+3. Double-click `GameOrganizer/GameOrganizer.bat` to start the GUI.
 
-`zones.bat` launches PowerShell with:
+`GameOrganizer.bat` launches PowerShell with:
 
 ```
-powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0ZoneMover.ps1"
+powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0GameOrganizer.ps1"
 ```
 
 `-ExecutionPolicy Bypass` is scoped to that single invocation and does not
@@ -29,7 +30,8 @@ change your machine-wide policy, so there is nothing to pre-configure.
 
 ### Configuration
 
-Open `ZoneMover/ZoneMover.ps1` and edit the `CONFIGURATION` block at the top:
+Open `GameOrganizer/GameOrganizer.ps1` and edit the `CONFIGURATION` block at
+the top:
 
 | Variable          | Purpose                                                         |
 |-------------------|-----------------------------------------------------------------|
@@ -55,8 +57,8 @@ The app uses features that normally require elevation:
 - **Robocopy during defrag** — no elevation needed on user-writable paths,
   but it does consume disk I/O and SSD writes.
 
-Recommended: right-click `zones.bat` → **Run as administrator** (or pin a
-shortcut with "Run as administrator" checked in Properties → Advanced).
+Recommended: right-click `GameOrganizer.bat` → **Run as administrator** (or
+pin a shortcut with "Run as administrator" checked in Properties → Advanced).
 
 ### Features
 

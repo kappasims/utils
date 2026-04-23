@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/utils status)",
+      "Bash(git -C /c/utils remote -v)",
+      "Bash(gh repo *)",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git -C /c/utils log --all --pretty=format:\"%h %s\")",
+      "Bash(git -C /c/utils ls-files)",
+      "Bash(git -C /c/utils log -1 --format=\"%an <%ae>\")",
+      "Bash(git mv *)"
+    ]
+  }
+}

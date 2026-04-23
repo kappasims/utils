@@ -6,7 +6,7 @@ $steamPath      = "F:\SteamLibrary\steamapps\common"
 $gogPath        = "F:\GOG Games"
 $archivedPath   = "F:\Archived"
 $defragTempPath = "E:\TempDefrag"
-$markerFileName = ".zonemover_compression"   # per-game marker so we can show state fast
+$markerFileName = ".gameorganizer_compression"   # per-game marker so we can show state fast
 # ---------------------
 
 # Ensure required directories exist
@@ -26,7 +26,7 @@ if ($srcRoot -ne $arcRoot) {
 # 1. MAIN FORM
 # ============================================================
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Zone Mover: Steam & GOG Manager"
+$form.Text = "Game Organizer: Steam & GOG Manager"
 $form.Size = New-Object System.Drawing.Size(1050, 600)
 $form.StartPosition = "CenterScreen"
 $form.MinimumSize  = New-Object System.Drawing.Size(900, 500)

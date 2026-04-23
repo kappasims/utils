@@ -1,1 +1,0 @@
-powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0ZoneMover.ps1"
