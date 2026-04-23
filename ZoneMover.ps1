@@ -151,8 +151,10 @@ function Set-CompressionState {
     if ($algo -eq "None (decompress)" -or [string]::IsNullOrWhiteSpace($algo)) {
         if (Test-Path $mp) { Remove-Item $mp -Force -ErrorAction SilentlyContinue }
     } else {
+        if (Test-Path $mp) { Remove-Item $mp -Force -ErrorAction SilentlyContinue }
         Set-Content -Path $mp -Value $algo -Force
-        (Get-Item $mp).Attributes = 'Hidden'
+        $mi = Get-Item -Path $mp -Force -ErrorAction SilentlyContinue
+        if ($mi) { $mi.Attributes = 'Hidden' }
     }
 }
 
@@ -617,8 +619,12 @@ $grid.Add_CellClick({
             if ($algo -eq "None (decompress)") {
                 if (Test-Path $markerPath) { Remove-Item $markerPath -Force }
             } else {
+                # Delete any existing (possibly hidden) marker first so Set-Content
+                # always writes a clean file, then re-apply the Hidden attribute.
+                if (Test-Path $markerPath) { Remove-Item $markerPath -Force }
                 Set-Content -Path $markerPath -Value $algo -Force
-                (Get-Item $markerPath).Attributes = 'Hidden'
+                $mItem = Get-Item -Path $markerPath -Force -ErrorAction SilentlyContinue
+                if ($mItem) { $mItem.Attributes = 'Hidden' }
             }
             return "ok"
         }
