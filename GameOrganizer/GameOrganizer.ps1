@@ -1,26 +1,63 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# --- CONFIGURATION ---
-$steamPath      = "F:\SteamLibrary\steamapps\common"
-$gogPath        = "F:\GOG Games"
-$archivedPath   = "F:\Archived"
-$defragTempPath = "E:\TempDefrag"
-$markerFileName = ".gameorganizer_compression"   # per-game marker so we can show state fast
-# ---------------------
+# --- DEFAULT CONFIGURATION (user overrides saved to %APPDATA%\GameOrganizer\config.json) ---
+$script:steamPath      = "F:\SteamLibrary\steamapps\common"
+$script:gogPath        = "F:\GOG Games"
+$script:archivedPath   = "F:\Archived"
+$script:defragTempPath = "E:\TempDefrag"
+$markerFileName        = ".gameorganizer_compression"   # per-game marker so we can show state fast
 
-# Ensure required directories exist
-if (-not (Test-Path $archivedPath))   { New-Item -ItemType Directory -Path $archivedPath   | Out-Null }
-if (-not (Test-Path $defragTempPath)) { New-Item -ItemType Directory -Path $defragTempPath | Out-Null }
+$script:configDir  = Join-Path $env:APPDATA "GameOrganizer"
+$script:configFile = Join-Path $script:configDir "config.json"
 
-# Warn if archive is on a different volume than sources (toggle would become a slow copy)
-$srcRoot = (Get-Item $steamPath).PSDrive.Name
-$arcRoot = (Get-Item $archivedPath).PSDrive.Name
-if ($srcRoot -ne $arcRoot) {
-    [System.Windows.Forms.MessageBox]::Show(
-        "Warning: archive path ($archivedPath) is on a different volume than the library paths. Toggle operations will be slow (full copy instead of rename).",
-        "Cross-volume config", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+function Load-AppConfig {
+    if (Test-Path $script:configFile) {
+        try {
+            $c = Get-Content $script:configFile -Raw -ErrorAction Stop | ConvertFrom-Json
+            if ($c.SteamPath)      { $script:steamPath      = [string]$c.SteamPath }
+            if ($c.GogPath)        { $script:gogPath        = [string]$c.GogPath }
+            if ($c.ArchivedPath)   { $script:archivedPath   = [string]$c.ArchivedPath }
+            if ($c.DefragTempPath) { $script:defragTempPath = [string]$c.DefragTempPath }
+        } catch {}
+    }
 }
+
+function Save-AppConfig {
+    if (-not (Test-Path $script:configDir)) {
+        New-Item -ItemType Directory -Path $script:configDir | Out-Null
+    }
+    $obj = [ordered]@{
+        SteamPath      = $script:steamPath
+        GogPath        = $script:gogPath
+        ArchivedPath   = $script:archivedPath
+        DefragTempPath = $script:defragTempPath
+    }
+    $obj | ConvertTo-Json | Set-Content -Path $script:configFile -Force
+}
+
+Load-AppConfig
+
+# Ensure archive/defrag dirs exist (only if configured)
+if ($script:archivedPath   -and -not (Test-Path $script:archivedPath))   { New-Item -ItemType Directory -Path $script:archivedPath   -Force | Out-Null }
+if ($script:defragTempPath -and -not (Test-Path $script:defragTempPath)) { New-Item -ItemType Directory -Path $script:defragTempPath -Force | Out-Null }
+
+# Cross-volume warning only runs when both a library and the archive actually exist
+function Test-CrossVolume {
+    $libRoot = $null
+    foreach ($p in @($script:steamPath, $script:gogPath)) {
+        if ($p -and (Test-Path $p)) { $libRoot = (Get-Item $p).PSDrive.Name; break }
+    }
+    if (-not $libRoot) { return }
+    if (-not (Test-Path $script:archivedPath)) { return }
+    $arcRoot = (Get-Item $script:archivedPath).PSDrive.Name
+    if ($libRoot -ne $arcRoot) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Warning: archive path ($($script:archivedPath)) is on a different volume than the library paths. Toggle operations will be slow (full copy instead of rename).",
+            "Cross-volume config", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+    }
+}
+Test-CrossVolume
 
 # ============================================================
 # 1. MAIN FORM
@@ -35,8 +72,8 @@ $form.MinimumSize  = New-Object System.Drawing.Size(900, 500)
 # 2. DATAGRIDVIEW
 # ============================================================
 $grid = New-Object System.Windows.Forms.DataGridView
-$grid.Location = New-Object System.Drawing.Point(10, 10)
-$grid.Size     = New-Object System.Drawing.Size(1010, 430)
+$grid.Location = New-Object System.Drawing.Point(10, 80)
+$grid.Size     = New-Object System.Drawing.Size(1010, 360)
 $grid.Anchor   = [System.Windows.Forms.AnchorStyles]::Top -bor `
                  [System.Windows.Forms.AnchorStyles]::Left -bor `
                  [System.Windows.Forms.AnchorStyles]::Right -bor `
@@ -255,8 +292,8 @@ function Load-Games {
     [System.Windows.Forms.Application]::DoEvents()
 
     $platforms = @(
-        @{ Path = $steamPath; Name = "Steam" },
-        @{ Path = $gogPath;   Name = "GOG"   }
+        @{ Path = $script:steamPath; Name = "Steam" },
+        @{ Path = $script:gogPath;   Name = "GOG"   }
     )
 
     $seen = 0
@@ -799,8 +836,107 @@ $grid.Add_CellMouseClick({
 })
 
 # ============================================================
-# 11. ADD CONTROLS & SHOW
+# 11. CONFIG PANEL (library paths, editable from the GUI)
 # ============================================================
+function New-PathRow {
+    param(
+        [string]$label,
+        [int]$y,
+        [string]$initial,
+        [scriptblock]$onCommit,
+        [string]$dialogDesc
+    )
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = $label
+    $lbl.Location = New-Object System.Drawing.Point(0, ($y + 4))
+    $lbl.Size = New-Object System.Drawing.Size(52, 22)
+    $lbl.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+
+    $tb = New-Object System.Windows.Forms.TextBox
+    $tb.Location = New-Object System.Drawing.Point(55, $y)
+    $tb.Size = New-Object System.Drawing.Size(915, 24)
+    $tb.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                 [System.Windows.Forms.AnchorStyles]::Left -bor `
+                 [System.Windows.Forms.AnchorStyles]::Right
+    $tb.Text = $initial
+
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Text = "..."
+    $btn.Size = New-Object System.Drawing.Size(32, 24)
+    $btn.Location = New-Object System.Drawing.Point(975, $y)
+    $btn.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+
+    # Commit on Leave (blur) or Enter key
+    $commit = {
+        $new = $tb.Text.Trim()
+        & $onCommit $new
+    }.GetNewClosure()
+
+    $tb.Add_Leave($commit)
+    $tb.Add_KeyDown({
+        param($s, $e)
+        if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+            $e.SuppressKeyPress = $true
+            $s.Parent.Focus() | Out-Null  # triggers Leave on $tb
+        }
+    })
+
+    $btn.Add_Click({
+        $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dlg.Description = $dialogDesc
+        if ($tb.Text -and (Test-Path $tb.Text)) { $dlg.SelectedPath = $tb.Text }
+        if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $tb.Text = $dlg.SelectedPath
+            & $onCommit $dlg.SelectedPath
+        }
+    }.GetNewClosure())
+
+    return @{ Label = $lbl; TextBox = $tb; Button = $btn }
+}
+
+$cfgPanel = New-Object System.Windows.Forms.Panel
+$cfgPanel.Location = New-Object System.Drawing.Point(10, 8)
+$cfgPanel.Size     = New-Object System.Drawing.Size(1010, 66)
+$cfgPanel.Anchor   = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                     [System.Windows.Forms.AnchorStyles]::Left -bor `
+                     [System.Windows.Forms.AnchorStyles]::Right
+
+# Reloads on commit only when the path actually changed; saves config either way
+# so an explicitly-cleared path is remembered as "not configured."
+$script:suppressReload = $false
+
+$steamRow = New-PathRow -label "Steam:" -y 4 -initial $script:steamPath `
+    -dialogDesc "Select Steam library folder (typically ...\\steamapps\\common)" `
+    -onCommit {
+        param($newPath)
+        if ($newPath -ne $script:steamPath) {
+            $script:steamPath = $newPath
+            Save-AppConfig
+            if (-not $script:suppressReload) { Load-Games }
+        }
+    }
+
+$gogRow = New-PathRow -label "GOG:" -y 34 -initial $script:gogPath `
+    -dialogDesc "Select GOG Games folder" `
+    -onCommit {
+        param($newPath)
+        if ($newPath -ne $script:gogPath) {
+            $script:gogPath = $newPath
+            Save-AppConfig
+            if (-not $script:suppressReload) { Load-Games }
+        }
+    }
+
+$cfgPanel.Controls.AddRange(@(
+    $steamRow.Label, $steamRow.TextBox, $steamRow.Button,
+    $gogRow.Label,   $gogRow.TextBox,   $gogRow.Button
+))
+
+# ============================================================
+# 12. ADD CONTROLS & SHOW
+# ============================================================
+$form.Controls.Add($cfgPanel)
 $form.Controls.Add($grid)
 $form.Controls.Add($overlayPanel)
 $form.Controls.Add($btnToggle)
