@@ -36,12 +36,12 @@ change machine policy.
 ### Configuration
 
 On first run a setup wizard asks for your library, archive, and scratch
-paths. Steam, GOG, and defrag are optional -- uncheck what you don't use.
+paths. Steam, GOG, and defrag are optional; uncheck what you don't use.
 Paths are stored in `%APPDATA%\GameOrganizer\config.json` and can be
 edited from the config bar at the top of the main window. **Clear Saved
 Settings** wipes that folder and reopens the wizard.
 
-Keep the archive folder on the same volume as your libraries -- toggle
+Keep the archive folder on the same volume as your libraries, as toggle
 is a rename within a volume and a full copy across volumes.
 
 ### What it does
@@ -60,7 +60,7 @@ decompressed on read by the NTFS driver. This is a different code path
 from classic "NTFS compression" (the Advanced Attributes checkbox):
 
 - It works on any NTFS volume regardless of whether the volume has
-  traditional compression enabled -- the file-level attribute is what
+  traditional compression enabled; the file-level attribute is what
   triggers decompression, not a folder flag.
 - It avoids the pathological read-amplification and memory-mapped-file
   problems that make classic NTFS compression a poor fit for game data.
@@ -70,8 +70,8 @@ from classic "NTFS compression" (the Advanced Attributes checkbox):
 
 Algorithms in rough order of ratio vs. cost:
 
-- **XPRESS4K / 8K / 16K** -- fast, modest ratio. 16K is the usual pick.
-- **LZX** -- best ratio, considerably slower to compress. Runtime reads
+- **XPRESS4K / 8K / 16K**: fast, modest ratio. 16K is the usual pick.
+- **LZX**: best ratio, considerably slower to compress. Runtime reads
   are still cheap.
 
 **Shadow copies (VSS):** compressing a game rewrites every file, so if
