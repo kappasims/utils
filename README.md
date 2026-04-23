@@ -19,8 +19,23 @@ Lives under [`GameOrganizer/`](GameOrganizer/).
 
 - Windows 10 / 11 on NTFS
 - Windows PowerShell 5.1
-- Administrator for junction creation and LZX compression (right-click
-  the `.bat` -> Run as administrator)
+- Administrator may be required depending on where your libraries live;
+  creating junctions and rewriting files under protected paths (e.g.
+  `Program Files`) needs elevation. Right-click the `.bat` -> Run as
+  administrator if you hit access-denied errors.
+
+### Configuration
+
+On first run a setup wizard asks for your library, archive zone, and
+scratch paths. Steam, GOG, and defrag are optional; uncheck what you
+don't use. The archive is expressed as **volume + zone** (drive
+dropdown + subpath) so you can move it across drives without retyping
+the whole path. Paths are stored in `%APPDATA%\GameOrganizer\config.json`
+and can be edited from the config bar at the top of the main window.
+**Clear Saved Settings** wipes that folder and reopens the wizard.
+
+Keep the archive zone on the same volume as your libraries, as toggle
+is a rename within a volume and a full copy across volumes.
 
 ### Prerequisites
 
@@ -46,19 +61,6 @@ powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0gameorgan
 
 `-ExecutionPolicy Bypass` is scoped to that one invocation and does not
 change machine policy.
-
-### Configuration
-
-On first run a setup wizard asks for your library, archive zone, and
-scratch paths. Steam, GOG, and defrag are optional; uncheck what you
-don't use. The archive is expressed as **volume + zone** (drive
-dropdown + subpath) so you can move it across drives without retyping
-the whole path. Paths are stored in `%APPDATA%\GameOrganizer\config.json`
-and can be edited from the config bar at the top of the main window.
-**Clear Saved Settings** wipes that folder and reopens the wizard.
-
-Keep the archive zone on the same volume as your libraries, as toggle
-is a rename within a volume and a full copy across volumes.
 
 <a id="about-the-compression"></a>
 
