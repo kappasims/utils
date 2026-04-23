@@ -638,8 +638,8 @@ $grid.Add_CellClick({
                 $script:progDir = $matches[1]
                 Set-Status ("Decompressing {0} ({1} files done) - {2}" -f $gameName, $script:progFiles, $script:progDir) -busy $true
             }
-            elseif ($line -match '^\s*\S.*\s+\d[\d,]*\s*:\s*\d[\d,]*\s*=\s*[\d.]+\s+to\s+1\s*$') {
-                # Per-file success line (compression)
+            elseif ($line -match '\[OK\]\s*$') {
+                # Per-file success line — compact.exe tags both compressed and decompressed files with "[OK]"
                 $script:progFiles++
                 if (($script:progFiles % 25) -eq 0) {
                     Set-Status ("Compressing {0} ({1} files) - {2}" -f $gameName, $script:progFiles, $script:progDir) -busy $true
