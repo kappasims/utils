@@ -1,16 +1,22 @@
-# Zone Mover
+# utils
+
+Personal collection of Windows utilities.
+
+## ZoneMover
 
 A Windows GUI for managing Steam and GOG game installs: archive games behind
 directory junctions, toggle them between active and archived, and apply NTFS
 compression (LZX / XPRESS) or run a copy-cycle defrag — all from a single
 DataGridView.
 
-## Running
+Lives under [`ZoneMover/`](ZoneMover/).
+
+### Running
 
 1. Clone or copy the repo anywhere on a Windows machine.
-2. Keep `ZoneMover.ps1` and `zones.bat` **side-by-side** in the same folder
-   (the launcher resolves the script with `%~dp0`).
-3. Double-click `zones.bat` to start the GUI.
+2. Keep `ZoneMover/ZoneMover.ps1` and `ZoneMover/zones.bat` **side-by-side** in
+   the same folder (the launcher resolves the script with `%~dp0`).
+3. Double-click `ZoneMover/zones.bat` to start the GUI.
 
 `zones.bat` launches PowerShell with:
 
@@ -21,9 +27,9 @@ powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0ZoneMover
 `-ExecutionPolicy Bypass` is scoped to that single invocation and does not
 change your machine-wide policy, so there is nothing to pre-configure.
 
-## Configuration
+### Configuration
 
-Open `ZoneMover.ps1` and edit the `CONFIGURATION` block at the top:
+Open `ZoneMover/ZoneMover.ps1` and edit the `CONFIGURATION` block at the top:
 
 | Variable          | Purpose                                                         |
 |-------------------|-----------------------------------------------------------------|
@@ -37,7 +43,7 @@ Keep `$archivedPath` on the **same volume** as your library paths — toggling
 state is a rename when they share a volume, and a full copy when they don't.
 The GUI warns you at startup if this is misconfigured.
 
-## Permissions
+### Permissions
 
 The app uses features that normally require elevation:
 
@@ -52,7 +58,7 @@ The app uses features that normally require elevation:
 Recommended: right-click `zones.bat` → **Run as administrator** (or pin a
 shortcut with "Run as administrator" checked in Properties → Advanced).
 
-## Features
+### Features
 
 - **Active / Archived toggle** — moves a game directory to `$archivedPath`
   and replaces the original path with a junction, so Steam/GOG still see it.
@@ -68,7 +74,7 @@ shortcut with "Run as administrator" checked in Properties → Advanced).
 - **Locking overlay** — a faded spinner covers the grid during any refresh
   so you cannot click a row mid-scan.
 
-## Requirements
+### Requirements
 
 - Windows 10 or 11
 - NTFS volumes (required for compression and junctions)
