@@ -8,7 +8,7 @@ $script:archivedPath   = "F:\Archived"
 $script:defragTempPath = "E:\TempDefrag"
 $markerFileName        = ".gameorganizer_compression"   # per-game marker so we can show state fast
 
-$script:configDir  = Join-Path $env:APPDATA "gameorganizer"
+$script:configDir  = Join-Path $env:APPDATA "GameOrganizer"
 $script:configFile = Join-Path $script:configDir "config.json"
 
 # If the user points at a Steam library root (contains steamapps\common) or at
