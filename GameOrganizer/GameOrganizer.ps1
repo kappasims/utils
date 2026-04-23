@@ -62,7 +62,196 @@ function Save-AppConfig {
     $obj | ConvertTo-Json | Set-Content -Path $script:configFile -Force
 }
 
+# ============================================================
+# FIRST-RUN SETUP WIZARD
+# Shown when %APPDATA%\GameOrganizer\config.json does not exist, and
+# on demand when the user clicks "Clear Saved Settings". Each optional
+# feature (Steam, GOG, Defrag) has a "I don't use this" checkbox.
+# Returns $true if the user saved, $false on cancel.
+# ============================================================
+function Show-SetupWizard {
+    param([hashtable]$preset)
+
+    $defaults = @{
+        SteamPath      = if ($preset -and $preset.SteamPath)      { $preset.SteamPath }      else { "C:\Program Files (x86)\Steam\steamapps\common" }
+        GogPath        = if ($preset -and $preset.GogPath)        { $preset.GogPath }        else { "C:\GOG Games" }
+        ArchivedPath   = if ($preset -and $preset.ArchivedPath)   { $preset.ArchivedPath }   else { "C:\GO_Archive" }
+        DefragTempPath = if ($preset -and $preset.DefragTempPath) { $preset.DefragTempPath } else { "C:\GO_DefragTemp" }
+    }
+
+    $f = New-Object System.Windows.Forms.Form
+    $f.Text = "Game Organizer — Setup"
+    $f.Size = New-Object System.Drawing.Size(660, 620)
+    $f.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $f.MaximizeBox = $false
+    $f.MinimizeBox = $false
+
+    $padX    = 16
+    $fieldW  = 540
+    $btnW    = 32
+    $rowBtnX = $padX + $fieldW + 6
+
+    $intro = New-Object System.Windows.Forms.Label
+    $intro.Text = "Configure where Game Organizer looks for games and where it parks archived data. Uncheck optional sections you don't need. Settings are stored in $($script:configDir) and can be changed later from the main window."
+    $intro.Location = New-Object System.Drawing.Point($padX, 12)
+    $intro.Size = New-Object System.Drawing.Size(($fieldW + $btnW + 6), 50)
+    $intro.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+
+    $rows = @{}
+
+    function Add-WizardSection {
+        param(
+            [ref]$y,
+            [string]$key,
+            [string]$title,
+            [string]$help,
+            [string]$initial,
+            [bool]$optional,
+            [string]$dialogDesc
+        )
+        $row = @{}
+        $cy  = $y.Value
+
+        if ($optional) {
+            $cb = New-Object System.Windows.Forms.CheckBox
+            $cb.Text = $title
+            $cb.Checked = $true
+            $cb.Location = New-Object System.Drawing.Point($padX, $cy)
+            $cb.Size = New-Object System.Drawing.Size(($fieldW + $btnW), 22)
+            $cb.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+            $row.CheckBox = $cb
+            $cy += 24
+        } else {
+            $lbl = New-Object System.Windows.Forms.Label
+            $lbl.Text = $title
+            $lbl.Location = New-Object System.Drawing.Point($padX, $cy)
+            $lbl.Size = New-Object System.Drawing.Size(($fieldW + $btnW), 20)
+            $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+            $row.Label = $lbl
+            $cy += 22
+        }
+
+        $hl = New-Object System.Windows.Forms.Label
+        $hl.Text = $help
+        $hl.Location = New-Object System.Drawing.Point($padX, $cy)
+        $hl.Size = New-Object System.Drawing.Size(($fieldW + $btnW), 38)
+        $hl.ForeColor = [System.Drawing.Color]::DimGray
+        $row.Help = $hl
+        $cy += 42
+
+        $tb = New-Object System.Windows.Forms.TextBox
+        $tb.Text = $initial
+        $tb.Location = New-Object System.Drawing.Point($padX, $cy)
+        $tb.Size = New-Object System.Drawing.Size($fieldW, 24)
+        $row.TextBox = $tb
+
+        $btn = New-Object System.Windows.Forms.Button
+        $btn.Text = "..."
+        $btn.Size = New-Object System.Drawing.Size($btnW, 24)
+        $btn.Location = New-Object System.Drawing.Point($rowBtnX, $cy)
+        $btn.Add_Click({
+            $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+            $dlg.Description = $dialogDesc
+            if ($tb.Text -and (Test-Path $tb.Text)) { $dlg.SelectedPath = $tb.Text }
+            if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+                $tb.Text = $dlg.SelectedPath
+            }
+        }.GetNewClosure())
+        $row.Button = $btn
+
+        $cy += 32
+        $y.Value = $cy
+        $rows[$key] = $row
+    }
+
+    $y = 68
+
+    Add-WizardSection ([ref]$y) -key "Steam" -optional $true `
+        -title "I use Steam" `
+        -help "Pick your Steam library root (the folder that contains steamapps\common) or the common folder itself — we'll descend automatically." `
+        -initial $defaults.SteamPath `
+        -dialogDesc "Steam library folder"
+
+    Add-WizardSection ([ref]$y) -key "Gog" -optional $true `
+        -title "I use GOG" `
+        -help "Pick the folder that holds your GOG game installs (often called 'GOG Games')." `
+        -initial $defaults.GogPath `
+        -dialogDesc "GOG Games folder"
+
+    Add-WizardSection ([ref]$y) -key "Archive" -optional $false `
+        -title "Archive folder" `
+        -help "Where games move when archived; the original path becomes a junction. Keep this on the same volume as your libraries, otherwise toggling becomes a full copy instead of a rename." `
+        -initial $defaults.ArchivedPath `
+        -dialogDesc "Archive folder"
+
+    Add-WizardSection ([ref]$y) -key "Defrag" -optional $true `
+        -title "Enable defrag" `
+        -help "Scratch folder for the copy-cycle defrag. Any drive with free space works. Uncheck if you don't plan to defrag." `
+        -initial $defaults.DefragTempPath `
+        -dialogDesc "Defrag scratch folder"
+
+    # Enable/disable children when the section checkbox toggles
+    $syncEnabled = {
+        foreach ($k in @("Steam","Gog","Defrag")) {
+            $r = $rows[$k]
+            if ($r.CheckBox) {
+                $on = $r.CheckBox.Checked
+                $r.TextBox.Enabled = $on
+                $r.Button.Enabled  = $on
+                $r.Help.ForeColor  = if ($on) { [System.Drawing.Color]::DimGray } else { [System.Drawing.Color]::LightGray }
+            }
+        }
+    }.GetNewClosure()
+    foreach ($k in @("Steam","Gog","Defrag")) {
+        $rows[$k].CheckBox.Add_CheckedChanged($syncEnabled)
+    }
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Cancel"
+    $btnCancel.Size = New-Object System.Drawing.Size(90, 28)
+    $btnCancel.Location = New-Object System.Drawing.Point(($rowBtnX - 112), ($y + 10))
+    $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+
+    $btnOK = New-Object System.Windows.Forms.Button
+    $btnOK.Text = "Save && Continue"
+    $btnOK.Size = New-Object System.Drawing.Size(130, 28)
+    $btnOK.Location = New-Object System.Drawing.Point(($rowBtnX - 18), ($y + 10))
+    $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
+
+    $f.Controls.Add($intro)
+    foreach ($k in @("Steam","Gog","Archive","Defrag")) {
+        $r = $rows[$k]
+        if ($r.CheckBox) { $f.Controls.Add($r.CheckBox) }
+        if ($r.Label)    { $f.Controls.Add($r.Label) }
+        $f.Controls.Add($r.Help)
+        $f.Controls.Add($r.TextBox)
+        $f.Controls.Add($r.Button)
+    }
+    $f.Controls.Add($btnCancel)
+    $f.Controls.Add($btnOK)
+    $f.AcceptButton = $btnOK
+    $f.CancelButton = $btnCancel
+    $f.ClientSize   = New-Object System.Drawing.Size(($fieldW + $btnW + 6 + ($padX * 2)), ($y + 50))
+
+    if ($f.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return $false }
+
+    $script:steamPath      = if ($rows["Steam"].CheckBox.Checked)  { Resolve-SteamPath ($rows["Steam"].TextBox.Text.Trim()) } else { "" }
+    $script:gogPath        = if ($rows["Gog"].CheckBox.Checked)    { $rows["Gog"].TextBox.Text.Trim() }                      else { "" }
+    $script:archivedPath   = $rows["Archive"].TextBox.Text.Trim()
+    $script:defragTempPath = if ($rows["Defrag"].CheckBox.Checked) { $rows["Defrag"].TextBox.Text.Trim() }                   else { "" }
+    Save-AppConfig
+    return $true
+}
+
+$configExisted = Test-Path $script:configFile
 Load-AppConfig
+if (-not $configExisted) {
+    if (-not (Show-SetupWizard)) {
+        # User cancelled first-run setup — nothing to do
+        return
+    }
+}
 
 # Ensure archive/defrag dirs exist (only if configured)
 if ($script:archivedPath   -and -not (Test-Path $script:archivedPath))   { New-Item -ItemType Directory -Path $script:archivedPath   -Force | Out-Null }
@@ -75,7 +264,7 @@ function Test-CrossVolume {
         if ($p -and (Test-Path $p)) { $libRoot = (Get-Item $p).PSDrive.Name; break }
     }
     if (-not $libRoot) { return }
-    if (-not (Test-Path $script:archivedPath)) { return }
+    if (-not ($script:archivedPath -and (Test-Path $script:archivedPath))) { return }
     $arcRoot = (Get-Item $script:archivedPath).PSDrive.Name
     if ($libRoot -ne $arcRoot) {
         [System.Windows.Forms.MessageBox]::Show(
@@ -578,6 +767,45 @@ $btnRefresh.Size = New-Object System.Drawing.Size(100, 35)
 $btnRefresh.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Left
 $btnRefresh.Add_Click({ Load-Games })
 
+# Clear Saved Settings — wipes %APPDATA%\GameOrganizer and re-runs the wizard
+$btnClearSettings = New-Object System.Windows.Forms.Button
+$btnClearSettings.Text = "Clear Saved Settings"
+$btnClearSettings.Size = New-Object System.Drawing.Size(160, 35)
+$btnClearSettings.Location = New-Object System.Drawing.Point(860, 450)
+$btnClearSettings.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Windows.Forms.AnchorStyles]::Right
+$btnClearSettings.Add_Click({
+    $r = [System.Windows.Forms.MessageBox]::Show(
+        "Delete all saved settings at $($script:configDir)?`n`nThis does not touch any game files, just Game Organizer's own config.",
+        "Clear Saved Settings",
+        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxIcon]::Warning)
+    if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+
+    if (Test-Path $script:configDir) {
+        try { Remove-Item $script:configDir -Recurse -Force -ErrorAction Stop }
+        catch {
+            [System.Windows.Forms.MessageBox]::Show("Could not remove $($script:configDir): $($_.Exception.Message)", "Error") | Out-Null
+            return
+        }
+    }
+
+    # Reset in-memory and re-run the wizard so the user can pick fresh values
+    $script:steamPath = ""; $script:gogPath = ""; $script:archivedPath = ""; $script:defragTempPath = ""
+    if (Show-SetupWizard) {
+        if ($script:archivedPath   -and -not (Test-Path $script:archivedPath))   { New-Item -ItemType Directory -Path $script:archivedPath   -Force | Out-Null }
+        if ($script:defragTempPath -and -not (Test-Path $script:defragTempPath)) { New-Item -ItemType Directory -Path $script:defragTempPath -Force | Out-Null }
+        $script:suppressReload = $true
+        if ($script:steamRow) { $script:steamRow.TextBox.Text = $script:steamPath }
+        if ($script:gogRow)   { $script:gogRow.TextBox.Text   = $script:gogPath }
+        $script:suppressReload = $false
+        Load-Games
+    } else {
+        # User cancelled re-setup; nothing to reload from, so show empty grid
+        $grid.Rows.Clear()
+        Set-Status "No configuration. Use Clear Saved Settings to run setup again."
+    }
+})
+
 # ============================================================
 # 10. ACTION COLUMN: custom-paint two buttons per cell, dispatch on click X
 # ============================================================
@@ -976,6 +1204,7 @@ $form.Controls.Add($overlayPanel)
 $form.Controls.Add($btnToggle)
 $form.Controls.Add($btnFix)
 $form.Controls.Add($btnRefresh)
+$form.Controls.Add($btnClearSettings)
 $overlayPanel.BringToFront()
 
 # Fire the initial scan after the form becomes visible so the overlay/spinner renders
