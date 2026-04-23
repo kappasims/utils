@@ -49,13 +49,15 @@ change machine policy.
 
 ### Configuration
 
-On first run a setup wizard asks for your library, archive, and scratch
-paths. Steam, GOG, and defrag are optional; uncheck what you don't use.
-Paths are stored in `%APPDATA%\GameOrganizer\config.json` and can be
-edited from the config bar at the top of the main window. **Clear Saved
-Settings** wipes that folder and reopens the wizard.
+On first run a setup wizard asks for your library, archive zone, and
+scratch paths. Steam, GOG, and defrag are optional; uncheck what you
+don't use. The archive is expressed as **volume + zone** (drive
+dropdown + subpath) so you can move it across drives without retyping
+the whole path. Paths are stored in `%APPDATA%\GameOrganizer\config.json`
+and can be edited from the config bar at the top of the main window.
+**Clear Saved Settings** wipes that folder and reopens the wizard.
 
-Keep the archive folder on the same volume as your libraries, as toggle
+Keep the archive zone on the same volume as your libraries, as toggle
 is a rename within a volume and a full copy across volumes.
 
 <a id="about-the-compression"></a>

@@ -37,13 +37,50 @@ function Resolve-SteamPath {
     return $path
 }
 
+# --- Archive zone helpers ---
+# A "zone" is a named subdirectory on a chosen "volume" (drive root).
+# Runtime state is the joined $script:archivedPath; the volume/zone split
+# is only used for UI. Volume examples: "F:\", zone examples: "Archived".
+function Get-AvailableVolumes {
+    try {
+        [System.IO.DriveInfo]::GetDrives() |
+            Where-Object { $_.IsReady -and ($_.DriveType -eq 'Fixed' -or $_.DriveType -eq 'Removable' -or $_.DriveType -eq 'Network') } |
+            ForEach-Object { $_.RootDirectory.FullName }
+    } catch { @() }
+}
+
+function Split-ArchivePath {
+    param([string]$path)
+    if ([string]::IsNullOrWhiteSpace($path)) { return @{ Volume = ""; Zone = "" } }
+    try {
+        $full = [System.IO.Path]::GetFullPath($path)
+        $root = [System.IO.Path]::GetPathRoot($full)
+        if (-not $root) { return @{ Volume = ""; Zone = $path } }
+        $zone = $full.Substring($root.Length).TrimEnd('\')
+        return @{ Volume = $root; Zone = $zone }
+    } catch {
+        return @{ Volume = ""; Zone = $path }
+    }
+}
+
+function Join-ArchivePath {
+    param([string]$volume, [string]$zone)
+    if ([string]::IsNullOrWhiteSpace($volume)) { return "" }
+    if ([string]::IsNullOrWhiteSpace($zone))   { return $volume }
+    return Join-Path $volume $zone.Trim('\')
+}
+
 function Load-AppConfig {
     if (Test-Path $script:configFile) {
         try {
             $c = Get-Content $script:configFile -Raw -ErrorAction Stop | ConvertFrom-Json
             if ($c.SteamPath)      { $script:steamPath      = Resolve-SteamPath ([string]$c.SteamPath) }
             if ($c.GogPath)        { $script:gogPath        = [string]$c.GogPath }
-            if ($c.ArchivedPath)   { $script:archivedPath   = [string]$c.ArchivedPath }
+            if ($c.ArchiveVolume -or $c.ArchiveZone) {
+                $script:archivedPath = Join-ArchivePath ([string]$c.ArchiveVolume) ([string]$c.ArchiveZone)
+            } elseif ($c.ArchivedPath) {
+                $script:archivedPath = [string]$c.ArchivedPath
+            }
             if ($c.DefragTempPath) { $script:defragTempPath = [string]$c.DefragTempPath }
         } catch {}
     }
@@ -53,10 +90,13 @@ function Save-AppConfig {
     if (-not (Test-Path $script:configDir)) {
         New-Item -ItemType Directory -Path $script:configDir | Out-Null
     }
+    $split = Split-ArchivePath $script:archivedPath
     $obj = [ordered]@{
         SteamPath      = $script:steamPath
         GogPath        = $script:gogPath
-        ArchivedPath   = $script:archivedPath
+        ArchiveVolume  = $split.Volume
+        ArchiveZone    = $split.Zone
+        ArchivedPath   = $script:archivedPath   # derived, kept for back-compat
         DefragTempPath = $script:defragTempPath
     }
     $obj | ConvertTo-Json | Set-Content -Path $script:configFile -Force
@@ -179,11 +219,65 @@ function Show-SetupWizard {
         -initial $defaults.GogPath `
         -dialogDesc "GOG Games folder"
 
-    Add-WizardSection ([ref]$y) -key "Archive" -optional $false `
-        -title "Archive folder" `
-        -help "Where games move when archived; the original path becomes a junction. Keep this on the same volume as your libraries, otherwise toggling becomes a full copy instead of a rename." `
-        -initial $defaults.ArchivedPath `
-        -dialogDesc "Archive folder"
+    # --- Archive zone row: volume dropdown + zone textbox + browse ---
+    $archiveRow = @{}
+    $arcSplit = Split-ArchivePath $defaults.ArchivedPath
+
+    $arcLbl = New-Object System.Windows.Forms.Label
+    $arcLbl.Text = "Archive zone (volume + subpath)"
+    $arcLbl.Location = New-Object System.Drawing.Point($padX, $y)
+    $arcLbl.Size = New-Object System.Drawing.Size(($fieldW + $btnW), 20)
+    $arcLbl.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $archiveRow.Label = $arcLbl
+    $y += 22
+
+    $arcHelp = New-Object System.Windows.Forms.Label
+    $arcHelp.Text = "Games move to <volume>\<zone> when archived; the original path becomes a junction. Pick a volume on the same drive as your libraries, as toggling is a rename on the same volume and a full copy across volumes."
+    $arcHelp.Location = New-Object System.Drawing.Point($padX, $y)
+    $arcHelp.Size = New-Object System.Drawing.Size(($fieldW + $btnW), 50)
+    $arcHelp.ForeColor = [System.Drawing.Color]::DimGray
+    $archiveRow.Help = $arcHelp
+    $y += 54
+
+    $volCombo = New-Object System.Windows.Forms.ComboBox
+    $volCombo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $volCombo.Location = New-Object System.Drawing.Point($padX, $y)
+    $volCombo.Size = New-Object System.Drawing.Size(100, 24)
+    foreach ($v in (Get-AvailableVolumes)) { [void]$volCombo.Items.Add($v) }
+    if ($arcSplit.Volume -and $volCombo.Items.Contains($arcSplit.Volume)) {
+        $volCombo.SelectedItem = $arcSplit.Volume
+    } elseif ($volCombo.Items.Count -gt 0) {
+        $volCombo.SelectedIndex = 0
+    }
+    $archiveRow.Volume = $volCombo
+
+    $zoneTb = New-Object System.Windows.Forms.TextBox
+    $zoneTb.Location = New-Object System.Drawing.Point(($padX + 106), $y)
+    $zoneTb.Size = New-Object System.Drawing.Size(($fieldW - 106), 24)
+    $zoneTb.Text = $arcSplit.Zone
+    $archiveRow.Zone = $zoneTb
+
+    $arcBtn = New-Object System.Windows.Forms.Button
+    $arcBtn.Text = "..."
+    $arcBtn.Size = New-Object System.Drawing.Size($btnW, 24)
+    $arcBtn.Location = New-Object System.Drawing.Point($rowBtnX, $y)
+    $arcBtn.Add_Click({
+        $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+        $dlg.Description = "Archive zone folder"
+        $seed = Join-ArchivePath $volCombo.SelectedItem $zoneTb.Text
+        if ($seed -and (Test-Path $seed)) { $dlg.SelectedPath = $seed }
+        if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            $s = Split-ArchivePath $dlg.SelectedPath
+            if ($s.Volume -and $volCombo.Items.Contains($s.Volume)) {
+                $volCombo.SelectedItem = $s.Volume
+            }
+            $zoneTb.Text = $s.Zone
+        }
+    }.GetNewClosure())
+    $archiveRow.Button = $arcBtn
+
+    $y += 32
+    $rows["Archive"] = $archiveRow
 
     Add-WizardSection ([ref]$y) -key "Defrag" -optional $true `
         -title "Enable defrag" `
@@ -225,7 +319,9 @@ function Show-SetupWizard {
         if ($r.CheckBox) { $f.Controls.Add($r.CheckBox) }
         if ($r.Label)    { $f.Controls.Add($r.Label) }
         $f.Controls.Add($r.Help)
-        $f.Controls.Add($r.TextBox)
+        if ($r.TextBox)  { $f.Controls.Add($r.TextBox) }
+        if ($r.Volume)   { $f.Controls.Add($r.Volume) }
+        if ($r.Zone)     { $f.Controls.Add($r.Zone) }
         $f.Controls.Add($r.Button)
     }
     $f.Controls.Add($btnCancel)
@@ -238,7 +334,7 @@ function Show-SetupWizard {
 
     $script:steamPath      = if ($rows["Steam"].CheckBox.Checked)  { Resolve-SteamPath ($rows["Steam"].TextBox.Text.Trim()) } else { "" }
     $script:gogPath        = if ($rows["Gog"].CheckBox.Checked)    { $rows["Gog"].TextBox.Text.Trim() }                      else { "" }
-    $script:archivedPath   = $rows["Archive"].TextBox.Text.Trim()
+    $script:archivedPath   = Join-ArchivePath ($rows["Archive"].Volume.SelectedItem) ($rows["Archive"].Zone.Text)
     $script:defragTempPath = if ($rows["Defrag"].CheckBox.Checked) { $rows["Defrag"].TextBox.Text.Trim() }                   else { "" }
     Save-AppConfig
     return $true
@@ -287,8 +383,8 @@ $form.MinimumSize  = New-Object System.Drawing.Size(900, 500)
 # 2. DATAGRIDVIEW
 # ============================================================
 $grid = New-Object System.Windows.Forms.DataGridView
-$grid.Location = New-Object System.Drawing.Point(10, 80)
-$grid.Size     = New-Object System.Drawing.Size(1010, 360)
+$grid.Location = New-Object System.Drawing.Point(10, 110)
+$grid.Size     = New-Object System.Drawing.Size(1010, 330)
 $grid.Anchor   = [System.Windows.Forms.AnchorStyles]::Top -bor `
                  [System.Windows.Forms.AnchorStyles]::Left -bor `
                  [System.Windows.Forms.AnchorStyles]::Right -bor `
@@ -797,6 +893,13 @@ $btnClearSettings.Add_Click({
         $script:suppressReload = $true
         if ($script:steamRow) { $script:steamRow.TextBox.Text = $script:steamPath }
         if ($script:gogRow)   { $script:gogRow.TextBox.Text   = $script:gogPath }
+        if ($script:archiveRow) {
+            $asplit = Split-ArchivePath $script:archivedPath
+            if ($asplit.Volume -and $script:archiveRow.Volume.Items.Contains($asplit.Volume)) {
+                $script:archiveRow.Volume.SelectedItem = $asplit.Volume
+            }
+            $script:archiveRow.Zone.Text = $asplit.Zone
+        }
         $script:suppressReload = $false
         Load-Games
     } else {
@@ -1151,7 +1254,7 @@ function New-PathRow {
 
 $cfgPanel = New-Object System.Windows.Forms.Panel
 $cfgPanel.Location = New-Object System.Drawing.Point(10, 8)
-$cfgPanel.Size     = New-Object System.Drawing.Size(1010, 66)
+$cfgPanel.Size     = New-Object System.Drawing.Size(1010, 96)
 $cfgPanel.Anchor   = [System.Windows.Forms.AnchorStyles]::Top -bor `
                      [System.Windows.Forms.AnchorStyles]::Left -bor `
                      [System.Windows.Forms.AnchorStyles]::Right
@@ -1190,9 +1293,87 @@ $script:gogRow = New-PathRow -label "GOG:" -y 34 -initial $script:gogPath `
 $steamRow = $script:steamRow
 $gogRow   = $script:gogRow
 
+# --- Archive zone row (volume combo + zone textbox + browse) ---
+$script:archiveRow = @{}
+$arcInit = Split-ArchivePath $script:archivedPath
+
+$arcLblMain = New-Object System.Windows.Forms.Label
+$arcLblMain.Text = "Archive:"
+$arcLblMain.Location = New-Object System.Drawing.Point(0, 68)
+$arcLblMain.Size = New-Object System.Drawing.Size(52, 22)
+$arcLblMain.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+$script:archiveRow.Label = $arcLblMain
+
+$arcVolMain = New-Object System.Windows.Forms.ComboBox
+$arcVolMain.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+$arcVolMain.Location = New-Object System.Drawing.Point(55, 64)
+$arcVolMain.Size = New-Object System.Drawing.Size(100, 24)
+foreach ($v in (Get-AvailableVolumes)) { [void]$arcVolMain.Items.Add($v) }
+if ($arcInit.Volume -and $arcVolMain.Items.Contains($arcInit.Volume)) {
+    $arcVolMain.SelectedItem = $arcInit.Volume
+} elseif ($arcVolMain.Items.Count -gt 0) {
+    $arcVolMain.SelectedIndex = 0
+}
+$script:archiveRow.Volume = $arcVolMain
+
+$arcZoneMain = New-Object System.Windows.Forms.TextBox
+$arcZoneMain.Location = New-Object System.Drawing.Point(161, 64)
+$arcZoneMain.Size = New-Object System.Drawing.Size(809, 24)
+$arcZoneMain.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor `
+                      [System.Windows.Forms.AnchorStyles]::Left -bor `
+                      [System.Windows.Forms.AnchorStyles]::Right
+$arcZoneMain.Text = $arcInit.Zone
+$script:archiveRow.Zone = $arcZoneMain
+
+$arcBtnMain = New-Object System.Windows.Forms.Button
+$arcBtnMain.Text = "..."
+$arcBtnMain.Size = New-Object System.Drawing.Size(32, 24)
+$arcBtnMain.Location = New-Object System.Drawing.Point(975, 64)
+$arcBtnMain.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Right
+$script:archiveRow.Button = $arcBtnMain
+
+$commitArchive = {
+    $newPath = Join-ArchivePath $arcVolMain.SelectedItem $arcZoneMain.Text
+    if ($newPath -ne $script:archivedPath) {
+        $script:archivedPath = $newPath
+        if ($script:archivedPath -and -not (Test-Path $script:archivedPath)) {
+            try { New-Item -ItemType Directory -Path $script:archivedPath -Force | Out-Null } catch {}
+        }
+        Save-AppConfig
+        if (-not $script:suppressReload) { Load-Games }
+    }
+}.GetNewClosure()
+
+$arcVolMain.Add_SelectedIndexChanged($commitArchive)
+$arcZoneMain.Add_Leave($commitArchive)
+$arcZoneMain.Add_KeyDown({
+    param($s, $e)
+    if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+        $e.SuppressKeyPress = $true
+        $s.Parent.Focus() | Out-Null
+    }
+})
+$arcBtnMain.Add_Click({
+    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dlg.Description = "Archive zone folder"
+    $seed = Join-ArchivePath $arcVolMain.SelectedItem $arcZoneMain.Text
+    if ($seed -and (Test-Path $seed)) { $dlg.SelectedPath = $seed }
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        $s = Split-ArchivePath $dlg.SelectedPath
+        if ($s.Volume -and $arcVolMain.Items.Contains($s.Volume)) {
+            $arcVolMain.SelectedItem = $s.Volume
+        }
+        $arcZoneMain.Text = $s.Zone
+        & $commitArchive
+    }
+}.GetNewClosure())
+
+$archiveRow = $script:archiveRow
+
 $cfgPanel.Controls.AddRange(@(
-    $steamRow.Label, $steamRow.TextBox, $steamRow.Button,
-    $gogRow.Label,   $gogRow.TextBox,   $gogRow.Button
+    $steamRow.Label,   $steamRow.TextBox,   $steamRow.Button,
+    $gogRow.Label,     $gogRow.TextBox,     $gogRow.Button,
+    $archiveRow.Label, $archiveRow.Volume,  $archiveRow.Zone, $archiveRow.Button
 ))
 
 # ============================================================
