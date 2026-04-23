@@ -179,17 +179,92 @@ function Resolve-RealPath {
 }
 
 # ============================================================
-# 5. LOAD GAMES
+# 5. BUSY OVERLAY (faded panel + rotating-dot spinner over the grid)
+# ============================================================
+$script:overlayText  = "Working..."
+$script:spinnerAngle = 0
+
+$overlayPanel = New-Object System.Windows.Forms.Panel
+$overlayPanel.BackColor = [System.Drawing.Color]::FromArgb(240, 245, 248)
+$overlayPanel.Visible = $false
+$overlayPanel.Anchor = $grid.Anchor
+$overlayPanel.Location = $grid.Location
+$overlayPanel.Size     = $grid.Size
+$overlayPanel.Cursor   = [System.Windows.Forms.Cursors]::WaitCursor
+
+$overlayPanel.Add_Paint({
+    param($sender, $e)
+    $g = $e.Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $cx = [int]($sender.Width / 2)
+    $cy = [int]($sender.Height / 2)
+    $r  = 32
+
+    # 12-dot rotating ring; trailing dots fade out
+    for ($i = 0; $i -lt 12; $i++) {
+        $angle = ([double]($script:spinnerAngle + ($i * 30))) * [Math]::PI / 180.0
+        $x = $cx + [Math]::Cos($angle) * $r
+        $y = $cy + [Math]::Sin($angle) * $r
+        $alpha = [int](40 + (215 * ($i / 11.0)))
+        $color = [System.Drawing.Color]::FromArgb($alpha, 60, 90, 170)
+        $brush = New-Object System.Drawing.SolidBrush($color)
+        $g.FillEllipse($brush, [single]($x - 5), [single]($y - 5), 10, 10)
+        $brush.Dispose()
+    }
+
+    $font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+    $size = $g.MeasureString($script:overlayText, $font)
+    $g.DrawString(
+        $script:overlayText, $font,
+        [System.Drawing.Brushes]::DimGray,
+        [single]($cx - $size.Width / 2),
+        [single]($cy + $r + 14)
+    )
+    $font.Dispose()
+})
+
+# Swallow clicks so the grid underneath stays "locked"
+$overlayPanel.Add_Click({ })
+
+$spinnerTimer = New-Object System.Windows.Forms.Timer
+$spinnerTimer.Interval = 60
+$spinnerTimer.Add_Tick({
+    $script:spinnerAngle = ($script:spinnerAngle + 20) % 360
+    $overlayPanel.Invalidate()
+})
+
+function Show-Overlay {
+    param([string]$text = "Working...")
+    $script:overlayText = $text
+    $overlayPanel.Location = $grid.Location
+    $overlayPanel.Size     = $grid.Size
+    $overlayPanel.Visible  = $true
+    $overlayPanel.BringToFront()
+    $spinnerTimer.Start()
+    $overlayPanel.Invalidate()
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
+function Hide-Overlay {
+    $spinnerTimer.Stop()
+    $overlayPanel.Visible = $false
+}
+
+# ============================================================
+# 5b. LOAD GAMES
 # ============================================================
 function Load-Games {
+    Show-Overlay "Scanning libraries..."
     Set-Status "Scanning libraries..." -busy $true
     $grid.Rows.Clear()
+    [System.Windows.Forms.Application]::DoEvents()
 
     $platforms = @(
         @{ Path = $steamPath; Name = "Steam" },
         @{ Path = $gogPath;   Name = "GOG"   }
     )
 
+    $seen = 0
     foreach ($p in $platforms) {
         if (-not (Test-Path $p.Path)) { continue }
         Get-ChildItem -Path $p.Path -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
@@ -215,6 +290,8 @@ function Load-Games {
                 }
             }
 
+            $script:overlayText = "Scanning $($p.Name): $($_.Name)"
+
             $sizeMB = if ($cleanup -eq "Broken Link") { 0 } else { Get-FolderSizeMB $realPath }
             $compState = if ($cleanup -eq "Broken Link") { "-" } else { Get-CompressionState $realPath }
 
@@ -233,8 +310,13 @@ function Load-Games {
             for ($i = 0; $i -lt $row.Cells.Count; $i++) {
                 $row.Cells[$i].Style.ForeColor = $color
             }
+
+            $seen++
+            # Pump the message loop so the spinner animates and the UI stays responsive
+            [System.Windows.Forms.Application]::DoEvents()
         }
     }
+    Hide-Overlay
     Set-Status "Ready. $($grid.Rows.Count) game(s) listed."
 }
 
@@ -683,9 +765,11 @@ $grid.Add_CellClick({
 # 11. ADD CONTROLS & SHOW
 # ============================================================
 $form.Controls.Add($grid)
+$form.Controls.Add($overlayPanel)
 $form.Controls.Add($btnToggle)
 $form.Controls.Add($btnFix)
 $form.Controls.Add($btnRefresh)
+$overlayPanel.BringToFront()
 
 Load-Games
 $form.Add_FormClosing({
@@ -697,5 +781,7 @@ $form.Add_FormClosing({
     }
     $jobTimer.Stop()
     $jobTimer.Dispose()
+    $spinnerTimer.Stop()
+    $spinnerTimer.Dispose()
 })
 $form.ShowDialog() | Out-Null
