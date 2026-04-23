@@ -11,11 +11,37 @@ $markerFileName        = ".gameorganizer_compression"   # per-game marker so we 
 $script:configDir  = Join-Path $env:APPDATA "GameOrganizer"
 $script:configFile = Join-Path $script:configDir "config.json"
 
+# If the user points at a Steam library root (contains steamapps\common) or at
+# the steamapps folder itself, descend to the common folder. Otherwise return
+# the input unchanged — an invalid/nonexistent path is the user's problem.
+function Resolve-SteamPath {
+    param([string]$path)
+    if (-not $path) { return $path }
+    if (-not (Test-Path $path)) { return $path }
+
+    # Already pointing at <lib>\steamapps\common
+    $leaf   = Split-Path $path -Leaf
+    $parent = Split-Path $path -Parent
+    if ($leaf -ieq "common" -and $parent -and (Split-Path $parent -Leaf) -ieq "steamapps") {
+        return $path
+    }
+
+    # <lib>\steamapps\common beneath the selection (library root)
+    $c1 = Join-Path $path "steamapps\common"
+    if (Test-Path $c1) { return $c1 }
+
+    # <lib>\steamapps selected — descend into its common folder
+    $c2 = Join-Path $path "common"
+    if ($leaf -ieq "steamapps" -and (Test-Path $c2)) { return $c2 }
+
+    return $path
+}
+
 function Load-AppConfig {
     if (Test-Path $script:configFile) {
         try {
             $c = Get-Content $script:configFile -Raw -ErrorAction Stop | ConvertFrom-Json
-            if ($c.SteamPath)      { $script:steamPath      = [string]$c.SteamPath }
+            if ($c.SteamPath)      { $script:steamPath      = Resolve-SteamPath ([string]$c.SteamPath) }
             if ($c.GogPath)        { $script:gogPath        = [string]$c.GogPath }
             if ($c.ArchivedPath)   { $script:archivedPath   = [string]$c.ArchivedPath }
             if ($c.DefragTempPath) { $script:defragTempPath = [string]$c.DefragTempPath }
@@ -906,18 +932,23 @@ $cfgPanel.Anchor   = [System.Windows.Forms.AnchorStyles]::Top -bor `
 # so an explicitly-cleared path is remembered as "not configured."
 $script:suppressReload = $false
 
-$steamRow = New-PathRow -label "Steam:" -y 4 -initial $script:steamPath `
-    -dialogDesc "Select Steam library folder (typically ...\\steamapps\\common)" `
+$script:steamRow = New-PathRow -label "Steam:" -y 4 -initial $script:steamPath `
+    -dialogDesc "Select Steam library root or steamapps\common folder" `
     -onCommit {
         param($newPath)
-        if ($newPath -ne $script:steamPath) {
-            $script:steamPath = $newPath
+        $resolved = Resolve-SteamPath $newPath
+        # If we descended, reflect the jump back into the textbox
+        if ($script:steamRow -and $script:steamRow.TextBox.Text -ne $resolved) {
+            $script:steamRow.TextBox.Text = $resolved
+        }
+        if ($resolved -ne $script:steamPath) {
+            $script:steamPath = $resolved
             Save-AppConfig
             if (-not $script:suppressReload) { Load-Games }
         }
     }
 
-$gogRow = New-PathRow -label "GOG:" -y 34 -initial $script:gogPath `
+$script:gogRow = New-PathRow -label "GOG:" -y 34 -initial $script:gogPath `
     -dialogDesc "Select GOG Games folder" `
     -onCommit {
         param($newPath)
@@ -927,6 +958,9 @@ $gogRow = New-PathRow -label "GOG:" -y 34 -initial $script:gogPath `
             if (-not $script:suppressReload) { Load-Games }
         }
     }
+
+$steamRow = $script:steamRow
+$gogRow   = $script:gogRow
 
 $cfgPanel.Controls.AddRange(@(
     $steamRow.Label, $steamRow.TextBox, $steamRow.Button,
