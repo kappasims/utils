@@ -79,22 +79,17 @@ $algoCol.Items.AddRange(@("LZX", "XPRESS16K", "XPRESS8K", "XPRESS4K", "None (dec
 $algoCol.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $grid.Columns.Add($algoCol) | Out-Null
 
-# Action button columns
-$defragCol = New-Object System.Windows.Forms.DataGridViewButtonColumn
-$defragCol.Name = "Defrag"
-$defragCol.HeaderText = "Defrag"
-$defragCol.Text = "Defrag"
-$defragCol.UseColumnTextForButtonValue = $true
-$defragCol.FillWeight = 60
-$grid.Columns.Add($defragCol) | Out-Null
-
-$compressCol = New-Object System.Windows.Forms.DataGridViewButtonColumn
-$compressCol.Name = "Compress"
-$compressCol.HeaderText = "Compress"
-$compressCol.Text = "Apply"
-$compressCol.UseColumnTextForButtonValue = $true
-$compressCol.FillWeight = 60
-$grid.Columns.Add($compressCol) | Out-Null
+# Single header-less actions column; we custom-paint two buttons inside each cell
+# and dispatch via click X-position (see CellPainting / CellMouseClick below).
+$actionCol = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+$actionCol.Name = "Actions"
+$actionCol.HeaderText = ""
+$actionCol.ReadOnly = $true
+$actionCol.FillWeight = 140
+$actionCol.SortMode = [System.Windows.Forms.DataGridViewColumnSortMode]::NotSortable
+$actionCol.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::White
+$actionCol.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::Black
+$grid.Columns.Add($actionCol) | Out-Null
 
 # ============================================================
 # 3. STATUS STRIP (progress + message at bottom)
@@ -297,7 +292,7 @@ function Load-Games {
 
             $rowIdx = $grid.Rows.Add(
                 $_.Name, $p.Name, $status, $sizeMB, $compState, $cleanup,
-                "LZX", "Defrag", "Apply"
+                "LZX", ""
             )
             $row = $grid.Rows[$rowIdx]
             $row.Tag = @{
@@ -521,14 +516,56 @@ $btnRefresh.Anchor = [System.Windows.Forms.AnchorStyles]::Bottom -bor [System.Wi
 $btnRefresh.Add_Click({ Load-Games })
 
 # ============================================================
-# 10. CELLCLICK (Defrag + Compress, merged)
+# 10. ACTION COLUMN: custom-paint two buttons per cell, dispatch on click X
 # ============================================================
-$grid.Add_CellClick({
+$btnFontCache = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Regular)
+
+# Split a cell rect into left (Defrag) and right (Compress) button rectangles.
+function Get-ActionButtonRects {
+    param([System.Drawing.Rectangle]$cellBounds)
+    $pad   = 4
+    $gap   = 6
+    $halfW = [Math]::Max(40, [int](($cellBounds.Width - ($pad * 2) - $gap) / 2))
+    $btnH  = [Math]::Max(18, $cellBounds.Height - ($pad * 2))
+    $y     = $cellBounds.Y + [int](($cellBounds.Height - $btnH) / 2)
+    $left  = New-Object System.Drawing.Rectangle ($cellBounds.X + $pad), $y, $halfW, $btnH
+    $right = New-Object System.Drawing.Rectangle ($cellBounds.X + $pad + $halfW + $gap), $y, $halfW, $btnH
+    return @($left, $right)
+}
+
+$grid.Add_CellPainting({
     param($sender, $e)
     if ($e.RowIndex -lt 0) { return }
+    if ($e.ColumnIndex -ne $grid.Columns["Actions"].Index) { return }
+
+    # Let the grid paint background/selection/border first
+    $parts = [System.Windows.Forms.DataGridViewPaintParts]::Background `
+        -bor [System.Windows.Forms.DataGridViewPaintParts]::Border `
+        -bor [System.Windows.Forms.DataGridViewPaintParts]::SelectionBackground
+    $e.Paint($e.ClipBounds, $parts)
+
+    $rects = Get-ActionButtonRects $e.CellBounds
+    [System.Windows.Forms.ButtonRenderer]::DrawButton(
+        $e.Graphics, $rects[0], "Defrag", $btnFontCache, $false,
+        [System.Windows.Forms.VisualStyles.PushButtonState]::Normal)
+    [System.Windows.Forms.ButtonRenderer]::DrawButton(
+        $e.Graphics, $rects[1], "Compress", $btnFontCache, $false,
+        [System.Windows.Forms.VisualStyles.PushButtonState]::Normal)
+
+    $e.Handled = $true
+})
+
+$grid.Add_CellMouseClick({
+    param($sender, $e)
+    if ($e.RowIndex -lt 0) { return }
+    if ($e.ColumnIndex -ne $grid.Columns["Actions"].Index) { return }
     $row = $grid.Rows[$e.RowIndex]
     $data = $row.Tag
     if (-not $data) { return }
+
+    # CellMouseEventArgs.X/Y are relative to the cell; compute which half was clicked
+    $cellWidth = $grid.Columns[$e.ColumnIndex].Width
+    $action = if ($e.X -lt ($cellWidth / 2)) { "Defrag" } else { "Compress" }
 
     $platform   = $data.Platform
     $gameName   = $data.GameName
@@ -536,7 +573,7 @@ $grid.Add_CellClick({
     $realPath   = Resolve-RealPath $data.FullPath $platform $gameName $isArchived
 
     # ------------- DEFRAG -------------
-    if ($e.ColumnIndex -eq $grid.Columns["Defrag"].Index) {
+    if ($action -eq "Defrag") {
         $resp = [System.Windows.Forms.MessageBox]::Show(
             "Defrag '$gameName' via copy cycle to $defragTempPath? This will take a while and consumes SSD writes.",
             "Confirm Defrag",
@@ -634,7 +671,7 @@ $grid.Add_CellClick({
     }
 
     # ------------- COMPRESS -------------
-    if ($e.ColumnIndex -eq $grid.Columns["Compress"].Index) {
+    if ($action -eq "Compress") {
         $algo = $row.Cells["Algo"].Value
         if (-not $algo) { $algo = "LZX" }
 
@@ -771,7 +808,9 @@ $form.Controls.Add($btnFix)
 $form.Controls.Add($btnRefresh)
 $overlayPanel.BringToFront()
 
-Load-Games
+# Fire the initial scan after the form becomes visible so the overlay/spinner renders
+$form.Add_Shown({ Load-Games })
+
 $form.Add_FormClosing({
     if ($script:currentOp) {
         try { $script:currentOp.PS.Stop()    } catch {}
